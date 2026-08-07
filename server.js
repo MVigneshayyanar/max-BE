@@ -100,14 +100,16 @@ const PORT = process.env.PORT || 3000;
 
 async function start() {
   try {
-    // Test database connection
-    await prisma.$connect();
-    console.log('✅ Connected to Neon PostgreSQL');
-
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 MAXmybill API running on port ${PORT}`);
       console.log(`📡 Socket.IO ready for real-time connections`);
     });
+
+    // Connect DB in background so healthcheck passes immediately
+    prisma.$connect()
+      .then(() => console.log('✅ Connected to Neon PostgreSQL'))
+      .catch((err) => console.error('❌ Neon PostgreSQL connection error:', err));
+
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
