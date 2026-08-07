@@ -1,0 +1,491 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ═══════════════════════════════════════════════════
+// USERS
+// ═══════════════════════════════════════════════════
+model User {
+  id                String    @id @default(cuid())
+  firebaseUid       String    @unique
+  email             String?
+  phone             String?
+  displayName       String?
+  role              String    @default("Owner")
+  permissions       Json      @default("{}")
+  isActive          Boolean   @default(true)
+  storeId           String?
+  store             Store?    @relation(fields: [storeId], references: [id])
+  activeSessionId   String?
+  activeDeviceId    String?
+  activeDeviceLabel String?
+  activeSessionUpdatedAt DateTime?
+  fcmTokens         String[]  @default([])
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  staffSales        Sale[]    @relation("StaffSales")
+
+  @@index([firebaseUid])
+  @@index([storeId])
+  @@index([email])
+  @@index([phone])
+}
+
+// ═══════════════════════════════════════════════════
+// STORES
+// ═══════════════════════════════════════════════════
+model Store {
+  id              String    @id @default(cuid())
+  storeName       String
+  ownerUid        String
+  ownerEmail      String?
+  businessType    String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  phone           String?
+  gstNumber       String?
+  panNumber       String?
+  logoUrl         String?
+
+  // Subscription
+  plan                    String    @default("Free")
+  subscriptionExpiryDate  DateTime?
+  isTrial                 Boolean   @default(false)
+
+  // Currency
+  currency        String    @default("INR")
+  currencySymbol  String    @default("₹")
+
+  // Number sequences (atomic increment on server)
+  invoicePrefix           String  @default("")
+  quotationPrefix         String  @default("")
+  purchasePrefix          String  @default("")
+  expensePrefix           String  @default("")
+  paymentReceiptPrefix    String  @default("")
+  nextInvoiceNumber       Int     @default(100001)
+  nextQuotationNumber     Int     @default(100001)
+  nextPurchaseNumber      Int     @default(100001)
+  nextExpenseNumber       Int     @default(100001)
+  nextPaymentReceiptNumber Int    @default(100001)
+
+  // Bill customization (flexible JSON for all bill settings)
+  billSettings    Json      @default("{}")
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  users             User[]
+  products          Product[]
+  sales             Sale[]
+  customers         Customer[]
+  categories        Category[]
+  quotations        Quotation[]
+  savedOrders       SavedOrder[]
+  expenses          Expense[]
+  expenseCategories ExpenseCategory[]
+  vendors           Vendor[]
+  stockPurchases    StockPurchase[]
+  creditNotes       CreditNote[]
+  creditLogs        CreditLog[]
+  roles             Role[]
+  taxProfiles       TaxProfile[]
+
+  @@index([ownerUid])
+}
+
+// ═══════════════════════════════════════════════════
+// PRODUCTS
+// ═══════════════════════════════════════════════════
+model Product {
+  id            String    @id @default(cuid())
+  storeId       String
+  store         Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name          String
+  productCode   String?
+  category      String?
+  price         Float     @default(0)
+  cost          Float     @default(0)
+  currentStock  Float     @default(0)
+  unit          String?
+  taxes         Json      @default("[]")
+  taxType       String?
+  barcode       String?
+  hsnCode       String?
+  description   String?
+  imageUrl      String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([storeId, productCode], map: "unique_store_productCode")
+  @@index([storeId])
+  @@index([storeId, category])
+  @@index([storeId, barcode])
+  @@index([storeId, name])
+  @@index([storeId, isActive])
+}
+
+// ═══════════════════════════════════════════════════
+// SALES
+// ═══════════════════════════════════════════════════
+model Sale {
+  id              String    @id @default(cuid())
+  storeId         String
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  invoiceNumber   String
+  items           Json
+  subtotal        Float     @default(0)
+  taxTotal        Float     @default(0)
+  discount        Float     @default(0)
+  total           Float     @default(0)
+  roundOff        Float     @default(0)
+  paymentMode     String?
+  paymentStatus   String    @default("completed")
+  customerPhone   String?
+  customerName    String?
+
+  // Split payment
+  cashReceived    Float     @default(0)
+  onlineReceived  Float     @default(0)
+  creditIssued    Float     @default(0)
+
+  // References
+  quotationId     String?
+  savedOrderId    String?
+  unsettledSaleId String?
+  settledAt       DateTime?
+
+  // Staff
+  staffId         String?
+  staffUser       User?     @relation("StaffSales", fields: [staffId], references: [id])
+  staffName       String?
+
+  // Extra data
+  notes           String?
+  billData        Json?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([storeId, invoiceNumber], map: "unique_store_invoiceNumber")
+  @@index([storeId])
+  @@index([storeId, createdAt])
+  @@index([storeId, customerPhone])
+  @@index([storeId, paymentStatus])
+  @@index([storeId, paymentMode])
+}
+
+// ═══════════════════════════════════════════════════
+// CUSTOMERS
+// ═══════════════════════════════════════════════════
+model Customer {
+  id              String    @id @default(cuid())
+  storeId         String
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name            String
+  phone           String
+  email           String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  gstNumber       String?
+  balance         Float     @default(0)
+  totalSales      Float     @default(0)
+  purchaseCount   Int       @default(0)
+  lastPurchaseAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([storeId, phone], map: "unique_store_customerPhone")
+  @@index([storeId])
+  @@index([storeId, name])
+}
+
+// ═══════════════════════════════════════════════════
+// CATEGORIES
+// ═══════════════════════════════════════════════════
+model Category {
+  id        String    @id @default(cuid())
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name      String
+  color     String?
+  icon      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([storeId, name], map: "unique_store_categoryName")
+  @@index([storeId])
+}
+
+// ═══════════════════════════════════════════════════
+// QUOTATIONS
+// ═══════════════════════════════════════════════════
+model Quotation {
+  id               String    @id @default(cuid())
+  storeId          String
+  store            Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  quotationNumber  String
+  items            Json
+  subtotal         Float     @default(0)
+  taxTotal         Float     @default(0)
+  discount         Float     @default(0)
+  total            Float     @default(0)
+  customerPhone    String?
+  customerName     String?
+  customerAddress  String?
+  status           String    @default("pending")
+  billed           Boolean   @default(false)
+  settledAt        DateTime?
+  validUntil       DateTime?
+  notes            String?
+  billData         Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([storeId, quotationNumber], map: "unique_store_quotationNumber")
+  @@index([storeId])
+  @@index([storeId, status])
+}
+
+// ═══════════════════════════════════════════════════
+// SAVED ORDERS
+// ═══════════════════════════════════════════════════
+model SavedOrder {
+  id           String    @id @default(cuid())
+  storeId      String
+  store        Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items        Json
+  customerInfo Json?
+  total        Float     @default(0)
+  label        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([storeId])
+}
+
+// ═══════════════════════════════════════════════════
+// EXPENSES
+// ═══════════════════════════════════════════════════
+model Expense {
+  id              String    @id @default(cuid())
+  storeId         String
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  expenseNumber   String?
+  category        String?
+  type            String?
+  amount          Float     @default(0)
+  paymentMode     String?
+  description     String?
+  vendorId        String?
+  vendorName      String?
+  date            DateTime?
+  attachmentUrl   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([storeId])
+  @@index([storeId, category])
+  @@index([storeId, createdAt])
+}
+
+// ═══════════════════════════════════════════════════
+// EXPENSE CATEGORIES
+// ═══════════════════════════════════════════════════
+model ExpenseCategory {
+  id        String    @id @default(cuid())
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name      String
+  types     Json      @default("[]")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([storeId, name], map: "unique_store_expenseCategoryName")
+  @@index([storeId])
+}
+
+// ═══════════════════════════════════════════════════
+// VENDORS
+// ═══════════════════════════════════════════════════
+model Vendor {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name        String
+  phone       String?
+  email       String?
+  address     String?
+  gstNumber   String?
+  balance     Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([storeId])
+  @@index([storeId, name])
+}
+
+// ═══════════════════════════════════════════════════
+// STOCK PURCHASES
+// ═══════════════════════════════════════════════════
+model StockPurchase {
+  id              String    @id @default(cuid())
+  storeId         String
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  purchaseNumber  String?
+  vendorId        String?
+  vendorName      String?
+  items           Json
+  subtotal        Float     @default(0)
+  taxTotal        Float     @default(0)
+  total           Float     @default(0)
+  paymentMode     String?
+  paymentStatus   String?
+  notes           String?
+  date            DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([storeId])
+  @@index([storeId, createdAt])
+}
+
+// ═══════════════════════════════════════════════════
+// CREDIT NOTES
+// ═══════════════════════════════════════════════════
+model CreditNote {
+  id                String    @id @default(cuid())
+  storeId           String
+  store             Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  creditNoteNumber  String
+  amount            Float     @default(0)
+  originalAmount    Float     @default(0)
+  status            String    @default("Active")
+  type              String?
+  customerId        String?
+  customerName      String?
+  customerPhone     String?
+  invoiceNumber     String?
+  usedInInvoice     String?
+  usedAt            DateTime?
+  lastPartialUseAt  DateTime?
+  lastPartialInvoice String?
+  items             Json?
+  reason            String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([storeId, creditNoteNumber], map: "unique_store_creditNoteNumber")
+  @@index([storeId])
+  @@index([storeId, status])
+  @@index([storeId, customerPhone])
+}
+
+// ═══════════════════════════════════════════════════
+// CREDIT LOGS (Payment History / Ledger)
+// ═══════════════════════════════════════════════════
+model CreditLog {
+  id            String    @id @default(cuid())
+  storeId       String
+  store         Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customerId    String
+  customerName  String?
+  amount        Float
+  type          String
+  method        String?
+  invoiceNumber String?
+  note          String?
+  date          DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+
+  @@index([storeId])
+  @@index([storeId, customerId])
+  @@index([storeId, createdAt])
+}
+
+// ═══════════════════════════════════════════════════
+// ROLES
+// ═══════════════════════════════════════════════════
+model Role {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name        String
+  permissions Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([storeId, name], map: "unique_store_roleName")
+  @@index([storeId])
+}
+
+// ═══════════════════════════════════════════════════
+// TAX PROFILES
+// ═══════════════════════════════════════════════════
+model TaxProfile {
+  id          String    @id @default(cuid())
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name        String
+  percentage  Float
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([storeId])
+}
+
+// ═══════════════════════════════════════════════════
+// APP-LEVEL (Not store-scoped)
+// ═══════════════════════════════════════════════════
+model MaintenanceSettings {
+  id                 String    @id @default("global")
+  isUnderMaintenance Boolean   @default(false)
+  minAppVersion      String    @default("1.0.0")
+  forceUpdate        Boolean   @default(false)
+  message            String?
+  updatedAt          DateTime  @updatedAt
+}
+
+model Knowledge {
+  id          String    @id @default(cuid())
+  title       String
+  content     String
+  category    String?
+  isPublished Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model SupportTicket {
+  id          String    @id @default(cuid())
+  userId      String
+  userName    String?
+  userEmail   String?
+  storeId     String?
+  storeName   String?
+  subject     String
+  message     String
+  status      String    @default("open")
+  response    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model OtpCode {
+  phone     String    @id
+  code      String
+  createdAt DateTime  @default(now())
+}
