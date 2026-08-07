@@ -9,8 +9,7 @@
     "db:migrate": "npx prisma migrate deploy",
     "db:push": "npx prisma db push",
     "db:generate": "npx prisma generate",
-    "db:studio": "npx prisma studio",
-    "postinstall": "npx prisma generate"
+    "db:studio": "npx prisma studio"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
