@@ -1,7 +1,6 @@
-const twilio = require('twilio');
-const { PrismaClient } = require('@prisma/client');
+﻿const twilio = require('twilio');
 
-const prisma = new PrismaClient();
+const prisma = require('../config/db');
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;

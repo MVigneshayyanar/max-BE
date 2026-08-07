@@ -1,7 +1,6 @@
-const admin = require('firebase-admin');
-const { PrismaClient } = require('@prisma/client');
+﻿const admin = require('firebase-admin');
 
-const prisma = new PrismaClient();
+const prisma = require('../config/db');
 
 /**
  * Middleware: Verify Firebase Auth ID token.

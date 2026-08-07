@@ -1,10 +1,9 @@
-const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
+﻿const router = require('express').Router();
 const admin = require('firebase-admin');
 const { authMiddleware } = require('../middleware/auth');
 const { sendOTP, verifyOTP } = require('../services/twilio');
 
-const prisma = new PrismaClient();
+const prisma = require('../config/db');
 
 // ─── POST /api/auth/register ─────────────────────
 // Called after Firebase Auth signup to create user record in PostgreSQL

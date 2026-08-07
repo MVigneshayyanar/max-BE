@@ -1,9 +1,8 @@
-const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
+﻿const router = require('express').Router();
 const admin = require('firebase-admin');
 const { authMiddleware, requireStore, requireOwner } = require('../middleware/auth');
 
-const prisma = new PrismaClient();
+const prisma = require('../config/db');
 router.use(authMiddleware);
 router.use(requireStore);
 

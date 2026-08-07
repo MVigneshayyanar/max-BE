@@ -8,14 +8,13 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('./config/db');
 const { initializeFirebaseAdmin } = require('./config/firebase');
 const { initializeSocket } = require('./services/socket');
 
 // ─── Initialize ──────────────────────────────────
 const app = express();
 const server = http.createServer(app);
-const prisma = new PrismaClient();
 
 // Make prisma available globally
 app.set('prisma', prisma);
