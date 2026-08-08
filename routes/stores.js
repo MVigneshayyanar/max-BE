@@ -1,10 +1,31 @@
-﻿const router = require('express').Router();
+const router = require('express').Router();
 const { authMiddleware, requireStore } = require('../middleware/auth');
 
 const prisma = require('../config/db');
 
 // All store routes require authentication
 router.use(authMiddleware);
+
+// ─── GET /api/stores ──────────────────────────────
+// List or filter stores (e.g. by ownerUid / ownerEmail)
+router.get('/', async (req, res) => {
+  try {
+    const { ownerUid, ownerEmail, limit = 50 } = req.query;
+    const where = {};
+    if (ownerUid) where.ownerUid = ownerUid;
+    if (ownerEmail) where.ownerEmail = ownerEmail;
+
+    const stores = await prisma.store.findMany({
+      where,
+      take: parseInt(limit),
+    });
+
+    res.json({ stores });
+  } catch (error) {
+    console.error('List stores error:', error);
+    res.status(500).json({ error: 'Failed to list stores' });
+  }
+});
 
 // ─── POST /api/stores ────────────────────────────
 // Create a new store (onboarding)
@@ -72,6 +93,25 @@ router.get('/mine', async (req, res) => {
     res.json({ store });
   } catch (error) {
     console.error('Get store error:', error);
+    res.status(500).json({ error: 'Failed to get store' });
+  }
+});
+
+// ─── GET /api/stores/:id ─────────────────────────
+// Get store by ID (or ownerUid fallback)
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    let store = await prisma.store.findUnique({ where: { id } });
+    if (!store) {
+      store = await prisma.store.findFirst({ where: { ownerUid: id } });
+    }
+    if (!store) {
+      return res.status(404).json({ error: 'Store not found' });
+    }
+    res.json({ store, ...store });
+  } catch (error) {
+    console.error('Get store by ID error:', error);
     res.status(500).json({ error: 'Failed to get store' });
   }
 });

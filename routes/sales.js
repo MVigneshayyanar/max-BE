@@ -1,4 +1,4 @@
-﻿const router = require('express').Router();
+const router = require('express').Router();
 const { authMiddleware, requireStore } = require('../middleware/auth');
 
 const prisma = require('../config/db');
@@ -27,17 +27,17 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    const [sales, total] = await Promise.all([
-      prisma.sale.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (parseInt(page) - 1) * parseInt(limit),
-        take: parseInt(limit),
-      }),
-      prisma.sale.count({ where }),
-    ]);
+    const take = parseInt(limit);
+    const skip = (parseInt(page) - 1) * take;
 
-    res.json({ sales, total, page: parseInt(page), limit: parseInt(limit) });
+    const sales = await prisma.sale.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    });
+
+    res.json({ sales, total: sales.length, page: parseInt(page), limit: take });
   } catch (error) {
     console.error('List sales error:', error);
     res.status(500).json({ error: 'Failed to list sales' });

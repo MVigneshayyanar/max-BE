@@ -1,4 +1,4 @@
-﻿const router = require('express').Router();
+const router = require('express').Router();
 const admin = require('firebase-admin');
 const { authMiddleware, requireStore, requireOwner } = require('../middleware/auth');
 
@@ -21,6 +21,25 @@ router.get('/', async (req, res) => {
     res.json({ staff });
   } catch (error) {
     res.status(500).json({ error: 'Failed to list staff' });
+  }
+});
+
+// ─── GET /api/staff/:id ──────────────────────────
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    let staffUser = await prisma.user.findFirst({
+      where: { firebaseUid: id, storeId: req.storeId },
+    });
+    if (!staffUser) {
+      staffUser = await prisma.user.findFirst({
+        where: { id, storeId: req.storeId },
+      });
+    }
+    if (!staffUser) return res.status(404).json({ error: 'Staff user not found' });
+    res.json({ staff: staffUser, ...staffUser });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get staff user' });
   }
 });
 
