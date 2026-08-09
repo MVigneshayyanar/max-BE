@@ -1,22 +1,20 @@
 FROM node:20-alpine
 
+# Install OpenSSL & libc compatibility for Prisma engine in Alpine
+RUN apk add --no-cache openssl libc6-compat
+
 WORKDIR /app
 
-# Copy package files first for better caching
+# Copy package files and prisma schema before npm ci so postinstall works
 COPY package.json package-lock.json* ./
-
-# Install dependencies
-RUN npm ci --production
-
-# Copy Prisma schema and generate client
 COPY prisma ./prisma
-RUN npx prisma generate
 
-# Copy app code
+# Install dependencies (runs postinstall: prisma generate)
+RUN npm ci --omit=dev
+
+# Copy application source code
 COPY . .
 
-# Expose port
 EXPOSE 3000
 
-# Start server
 CMD ["node", "server.js"]
