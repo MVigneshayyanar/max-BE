@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
 });
 
 // ─── POST /api/stores ────────────────────────────
-// Create a new store (onboarding)
+// Create or Update store (onboarding)
 router.post('/', async (req, res) => {
   try {
     const {
@@ -36,45 +36,88 @@ router.post('/', async (req, res) => {
       phone, gstNumber, panNumber, currency, currencySymbol,
     } = req.body;
 
-    if (!storeName) {
-      return res.status(400).json({ error: 'Store name is required' });
-    }
+    const firebaseUid = req.firebaseUid;
+    const nameToUse = storeName || req.body.businessName || 'My Store';
 
     // Check if user already has a store
-    if (req.user.storeId) {
-      return res.status(400).json({ error: 'User already has a store' });
+    let userStore = null;
+    if (req.user?.storeId) {
+      userStore = await prisma.store.findUnique({ where: { id: req.user.storeId } });
+    }
+    if (!userStore && firebaseUid) {
+      userStore = await prisma.store.findFirst({
+        where: {
+          OR: [
+            { ownerUid: firebaseUid },
+            ...(req.user?.email ? [{ ownerEmail: req.user.email }] : []),
+          ],
+        },
+      });
+    }
+
+    if (userStore) {
+      // User already has a store -> Update existing store
+      const updated = await prisma.store.update({
+        where: { id: userStore.id },
+        data: {
+          storeName: nameToUse,
+          businessType: businessType || userStore.businessType,
+          address: address || userStore.address,
+          city: city || userStore.city,
+          state: state || userStore.state,
+          pincode: pincode || userStore.pincode,
+          phone: phone || userStore.phone,
+          gstNumber: gstNumber || userStore.gstNumber,
+          panNumber: panNumber || userStore.panNumber,
+          currency: currency || userStore.currency,
+          currencySymbol: currencySymbol || userStore.currencySymbol,
+        },
+      });
+
+      if (req.user && req.user.storeId !== userStore.id) {
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: { storeId: userStore.id },
+        });
+      }
+
+      return res.json({ store: updated, user: req.user, ...updated });
     }
 
     // Create store and link to user in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const store = await tx.store.create({
         data: {
-          storeName,
-          ownerUid: req.firebaseUid,
-          ownerEmail: req.user.email,
+          storeName: nameToUse,
+          ownerUid: firebaseUid,
+          ownerEmail: req.user?.email || null,
           businessType,
           address, city, state, pincode,
           phone, gstNumber, panNumber,
           currency: currency || 'INR',
           currencySymbol: currencySymbol || '₹',
-          plan: 'Free',
+          plan: 'MAX Plus',
+          isTrial: true,
         },
       });
 
       // Link user to store
-      const user = await tx.user.update({
-        where: { id: req.user.id },
-        data: { storeId: store.id },
-        include: { store: true },
-      });
+      let updatedUser = req.user;
+      if (req.user) {
+        updatedUser = await tx.user.update({
+          where: { id: req.user.id },
+          data: { storeId: store.id },
+          include: { store: true },
+        });
+      }
 
-      return { store, user };
+      return { store, user: updatedUser };
     });
 
-    res.status(201).json(result);
+    res.status(201).json({ ...result.store, store: result.store, user: result.user });
   } catch (error) {
     console.error('Create store error:', error);
-    res.status(500).json({ error: 'Failed to create store' });
+    res.status(500).json({ error: 'Failed to create store: ' + error.message });
   }
 });
 
@@ -82,15 +125,31 @@ router.post('/', async (req, res) => {
 // Get current user's store
 router.get('/mine', async (req, res) => {
   try {
-    if (!req.storeId) {
-      return res.json({ store: null });
+    let store = null;
+    if (req.storeId) {
+      store = await prisma.store.findUnique({
+        where: { id: req.storeId },
+      });
     }
 
-    const store = await prisma.store.findUnique({
-      where: { id: req.storeId },
-    });
+    if (!store && req.firebaseUid) {
+      store = await prisma.store.findFirst({
+        where: {
+          OR: [
+            { ownerUid: req.firebaseUid },
+            ...(req.user?.email ? [{ ownerEmail: req.user.email }] : []),
+          ],
+        },
+      });
+      if (store && req.user && !req.user.storeId) {
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: { storeId: store.id },
+        });
+      }
+    }
 
-    res.json({ store });
+    res.json({ store, ...(store || {}) });
   } catch (error) {
     console.error('Get store error:', error);
     res.status(500).json({ error: 'Failed to get store' });
@@ -122,76 +181,99 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const body = req.body;
+    const firebaseUid = req.firebaseUid;
 
-    let store = await prisma.store.findUnique({ where: { id } });
+    // Check if user already owns a store in PostgreSQL
+    let userStore = null;
+    if (req.user?.storeId) {
+      userStore = await prisma.store.findUnique({ where: { id: req.user.storeId } });
+    }
+    if (!userStore && firebaseUid) {
+      userStore = await prisma.store.findFirst({
+        where: {
+          OR: [
+            { ownerUid: firebaseUid },
+            ...(req.user?.email ? [{ ownerEmail: req.user.email }] : []),
+          ],
+        },
+      });
+    }
 
-    if (!store) {
-      // Store does not exist yet -> Create new Store (Onboarding)
-      const storeName = body.businessName || body.storeName || 'My Store';
-      const ownerUid = body.ownerUid || req.firebaseUid;
-      const ownerEmail = body.ownerEmail || req.user.email;
+    const storeName = body.businessName || body.storeName || 'My Store';
+    const ownerEmail = body.ownerEmail || req.user?.email || null;
+    const phone = body.businessPhone || body.phone || null;
+    const address = body.businessLocation || body.address || null;
+    const gstNumber = body.gstin || body.gstNumber || null;
+    const currency = body.currency || 'INR';
 
-      store = await prisma.$transaction(async (tx) => {
-        const createdStore = await tx.store.create({
-          data: {
-            id, // Use explicit storeId from client
-            storeName,
-            ownerUid,
-            ownerEmail,
-            phone: body.businessPhone || body.phone,
-            address: body.businessLocation || body.address,
-            gstNumber: body.gstin || body.gstNumber,
-            currency: body.currency || 'INR',
-            plan: body.plan || 'Free',
-            isTrial: body.isTrial || false,
-            subscriptionExpiryDate: body.subscriptionExpiryDate ? new Date(body.subscriptionExpiryDate) : null,
-          },
-        });
-
-        // Link user to created store
-        await tx.user.update({
-          where: { id: req.user.id },
-          data: { storeId: createdStore.id },
-        });
-
-        return createdStore;
+    if (userStore) {
+      // User ALREADY has a store -> Update existing store
+      const updated = await prisma.store.update({
+        where: { id: userStore.id },
+        data: {
+          storeName,
+          phone: phone || userStore.phone,
+          address: address || userStore.address,
+          gstNumber: gstNumber || userStore.gstNumber,
+          currency: currency || userStore.currency,
+        },
       });
 
-      return res.status(201).json({ store, ...store });
-    }
-
-    // Store exists -> Ensure user owns this store
-    if (req.storeId && req.storeId !== id && store.ownerUid !== req.firebaseUid) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const allowedFields = [
-      'storeName', 'businessName', 'businessType', 'address', 'city', 'state', 'pincode',
-      'phone', 'businessPhone', 'gstNumber', 'gstin', 'panNumber', 'logoUrl', 'currency',
-      'currencySymbol', 'billSettings',
-    ];
-
-    const updateData = {};
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        if (field === 'businessName') updateData.storeName = body[field];
-        else if (field === 'businessPhone') updateData.phone = body[field];
-        else if (field === 'gstin') updateData.gstNumber = body[field];
-        else updateData[field] = body[field];
+      // Ensure user.storeId is linked
+      if (req.user && req.user.storeId !== userStore.id) {
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: { storeId: userStore.id },
+        });
       }
+
+      return res.json({ store: updated, ...updated, storeId: updated.id });
     }
 
-    store = await prisma.store.update({
-      where: { id },
-      data: updateData,
+    // User DOES NOT have a store yet -> Create a new Store
+    // Ensure store ID is unique in DB
+    let targetStoreId = id;
+    const existingById = await prisma.store.findUnique({ where: { id: targetStoreId } });
+    if (existingById && existingById.ownerUid !== firebaseUid) {
+      // Requested ID is taken by another user -> Generate a unique store ID
+      targetStoreId = String(Date.now());
+    }
+
+    const createdStore = await prisma.$transaction(async (tx) => {
+      const store = await tx.store.create({
+        data: {
+          id: targetStoreId,
+          storeName,
+          ownerUid: firebaseUid,
+          ownerEmail,
+          phone,
+          address,
+          gstNumber,
+          currency,
+          plan: body.plan || 'MAX Plus',
+          isTrial: body.isTrial !== undefined ? body.isTrial : true,
+          subscriptionExpiryDate: body.subscriptionExpiryDate ? new Date(body.subscriptionExpiryDate) : null,
+        },
+      });
+
+      if (req.user) {
+        await tx.user.update({
+          where: { id: req.user.id },
+          data: { storeId: store.id },
+        });
+      }
+
+      return store;
     });
 
-    res.json({ store, ...store });
+    res.status(201).json({ store: createdStore, ...createdStore, storeId: createdStore.id });
   } catch (error) {
     console.error('Update/Create store error:', error);
-    res.status(500).json({ error: 'Failed to save store details' });
+    res.status(500).json({ error: 'Failed to save store details: ' + error.message });
   }
 });
+
+
 
 // ─── PUT /api/stores/:id/settings ────────────────
 // Update store settings (prefixes, number sequences, bill settings)
