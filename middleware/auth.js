@@ -39,26 +39,58 @@ async function authMiddleware(req, res, next) {
     }
 
     const firebaseUid = decodedToken.uid;
+    const email = decodedToken.email || null;
 
-    // Load user from PostgreSQL
+    // Load user from PostgreSQL by firebaseUid first
     let user = await prisma.user.findUnique({
       where: { firebaseUid },
       include: { store: true },
     });
 
-    // Auto-create user record if it doesn't exist yet (first login)
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          firebaseUid,
-          email: decodedToken.email || null,
-          phone: decodedToken.phone_number || null,
-          displayName: decodedToken.name || null,
-          role: 'Owner',
-        },
+    // Fallback: search by email if user not found by firebaseUid
+    if (!user && email) {
+      user = await prisma.user.findFirst({
+        where: { email },
         include: { store: true },
       });
-      console.log(`📝 Auto-created user record for ${firebaseUid}`);
+      if (user) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { firebaseUid },
+          include: { store: true },
+        });
+        console.log(`🔄 Re-linked user email ${email} to new firebaseUid ${firebaseUid}`);
+      }
+    }
+
+    // Auto-create user record if still not found
+    if (!user) {
+      try {
+        user = await prisma.user.create({
+          data: {
+            firebaseUid,
+            email,
+            phone: decodedToken.phone_number || null,
+            displayName: decodedToken.name || null,
+            role: 'Owner',
+          },
+          include: { store: true },
+        });
+        console.log(`📝 Auto-created user record for ${firebaseUid}`);
+      } catch (createErr) {
+        // If email unique constraint fails, fetch by email and update firebaseUid
+        if (email) {
+          user = await prisma.user.findFirst({ where: { email }, include: { store: true } });
+          if (user) {
+            user = await prisma.user.update({
+              where: { id: user.id },
+              data: { firebaseUid },
+              include: { store: true },
+            });
+          }
+        }
+        if (!user) throw createErr;
+      }
     }
 
     // Auto-link store if user.storeId is null but matching store exists
