@@ -3,26 +3,42 @@ const path = require('path');
 
 function initializeFirebaseAdmin() {
   try {
-    // Try to use service account file
-    const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || 
-      path.join(__dirname, '..', 'firebase-service-account.json');
-    
-    // Check if running on Railway with env var
+    if (admin.apps.length > 0) return;
+
+    // 1. Try FIREBASE_SERVICE_ACCOUNT_JSON env var (Railway)
     if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
+        projectId: serviceAccount.project_id || 'maxbillup',
       });
-    } else {
-      admin.initializeApp({
-        credential: admin.credential.cert(require(serviceAccountPath)),
-      });
+      console.log('✅ Firebase Admin SDK initialized from FIREBASE_SERVICE_ACCOUNT_JSON env');
+      return;
     }
-    console.log('✅ Firebase Admin SDK initialized');
+
+    // 2. Try local firebase-service-account.json file
+    const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || 
+      path.join(__dirname, '..', 'firebase-service-account.json');
+
+    try {
+      const serviceAccount = require(serviceAccountPath);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: serviceAccount.project_id || 'maxbillup',
+      });
+      console.log('✅ Firebase Admin SDK initialized from local service account file');
+      return;
+    } catch (_) {}
+
+    // 3. Fallback: Public Cert Verification mode via Project ID
+    // Allows admin.auth().verifyIdToken(token) to verify user logins without requiring private key
+    admin.initializeApp({
+      projectId: process.env.FIREBASE_PROJECT_ID || 'maxbillup',
+    });
+    console.log('✅ Firebase Admin SDK initialized with Project ID fallback (token verification active)');
+
   } catch (error) {
-    console.error('⚠️ Firebase Admin SDK init failed:', error.message);
-    console.error('   Make sure firebase-service-account.json exists or FIREBASE_SERVICE_ACCOUNT_JSON env is set');
-    // Don't crash — some endpoints may work without it
+    console.error('⚠️ Firebase Admin SDK init error:', error.message);
   }
 }
 
