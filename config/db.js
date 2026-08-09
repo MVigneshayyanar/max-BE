@@ -47,9 +47,10 @@ const prisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
 });
 
-module.exports = {
-  pool,
-  query,
-  createDirectClient,
-  prisma,
-};
+// Attach helpers to prisma object for 100% backward & forward import compatibility
+prisma.pool = pool;
+prisma.query = query;
+prisma.createDirectClient = createDirectClient;
+prisma.prisma = prisma; // Self-reference allows both `require('./config/db')` and `require('./config/db').prisma`
+
+module.exports = prisma;
