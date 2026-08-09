@@ -71,9 +71,11 @@ const authLimiter = rateLimit({
 app.get('/health', async (req, res) => {
   let dbStatus = 'disconnected';
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await pool.query('SELECT 1');
     dbStatus = 'connected';
-  } catch (_) {}
+  } catch (err) {
+    console.error('Health check DB error:', err.message);
+  }
 
   res.json({
     status: dbStatus === 'connected' ? 'ok' : 'degraded',
