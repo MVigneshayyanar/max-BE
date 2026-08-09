@@ -1,4 +1,4 @@
-﻿const admin = require('firebase-admin');
+const admin = require('firebase-admin');
 
 const prisma = require('../config/db');
 
@@ -59,6 +59,26 @@ async function authMiddleware(req, res, next) {
         include: { store: true },
       });
       console.log(`📝 Auto-created user record for ${firebaseUid}`);
+    }
+
+    // Auto-link store if user.storeId is null but matching store exists
+    if (!user.storeId) {
+      const matchingStore = await prisma.store.findFirst({
+        where: {
+          OR: [
+            { ownerUid: firebaseUid },
+            ...(user.email ? [{ ownerEmail: user.email }] : []),
+          ],
+        },
+      });
+      if (matchingStore) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { storeId: matchingStore.id },
+          include: { store: true },
+        });
+        console.log(`🔗 Auto-linked user ${firebaseUid} to existing store ${matchingStore.id}`);
+      }
     }
 
     if (!user.isActive) {

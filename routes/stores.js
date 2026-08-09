@@ -117,36 +117,79 @@ router.get('/:id', async (req, res) => {
 });
 
 // ─── PUT /api/stores/:id ─────────────────────────
-// Update store details
-router.put('/:id', requireStore, async (req, res) => {
+// Create or Update store details (supports onboarding when user has no store yet)
+router.put('/:id', async (req, res) => {
   try {
-    // Ensure user can only update their own store
-    if (req.params.id !== req.storeId) {
+    const { id } = req.params;
+    const body = req.body;
+
+    let store = await prisma.store.findUnique({ where: { id } });
+
+    if (!store) {
+      // Store does not exist yet -> Create new Store (Onboarding)
+      const storeName = body.businessName || body.storeName || 'My Store';
+      const ownerUid = body.ownerUid || req.firebaseUid;
+      const ownerEmail = body.ownerEmail || req.user.email;
+
+      store = await prisma.$transaction(async (tx) => {
+        const createdStore = await tx.store.create({
+          data: {
+            id, // Use explicit storeId from client
+            storeName,
+            ownerUid,
+            ownerEmail,
+            phone: body.businessPhone || body.phone,
+            address: body.businessLocation || body.address,
+            gstNumber: body.gstin || body.gstNumber,
+            currency: body.currency || 'INR',
+            plan: body.plan || 'Free',
+            isTrial: body.isTrial || false,
+            subscriptionExpiryDate: body.subscriptionExpiryDate ? new Date(body.subscriptionExpiryDate) : null,
+          },
+        });
+
+        // Link user to created store
+        await tx.user.update({
+          where: { id: req.user.id },
+          data: { storeId: createdStore.id },
+        });
+
+        return createdStore;
+      });
+
+      return res.status(201).json({ store, ...store });
+    }
+
+    // Store exists -> Ensure user owns this store
+    if (req.storeId && req.storeId !== id && store.ownerUid !== req.firebaseUid) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     const allowedFields = [
-      'storeName', 'businessType', 'address', 'city', 'state', 'pincode',
-      'phone', 'gstNumber', 'panNumber', 'logoUrl', 'currency', 'currencySymbol',
-      'billSettings',
+      'storeName', 'businessName', 'businessType', 'address', 'city', 'state', 'pincode',
+      'phone', 'businessPhone', 'gstNumber', 'gstin', 'panNumber', 'logoUrl', 'currency',
+      'currencySymbol', 'billSettings',
     ];
 
     const updateData = {};
     for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
+      if (body[field] !== undefined) {
+        if (field === 'businessName') updateData.storeName = body[field];
+        else if (field === 'businessPhone') updateData.phone = body[field];
+        else if (field === 'gstin') updateData.gstNumber = body[field];
+        else updateData[field] = body[field];
       }
     }
 
-    const store = await prisma.store.update({
-      where: { id: req.storeId },
+    store = await prisma.store.update({
+      where: { id },
       data: updateData,
     });
 
-    res.json({ store });
+    res.json({ store, ...store });
   } catch (error) {
-    console.error('Update store error:', error);
-    res.status(500).json({ error: 'Failed to update store' });
+    console.error('Update/Create store error:', error);
+    res.status(500).json({ error: 'Failed to save store details' });
   }
 });
 

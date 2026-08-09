@@ -68,8 +68,19 @@ const authLimiter = rateLimit({
 });
 
 // ─── Health Check ────────────────────────────────
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  let dbStatus = 'disconnected';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'connected';
+  } catch (_) {}
+
+  res.json({
+    status: dbStatus === 'connected' ? 'ok' : 'degraded',
+    database: dbStatus,
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+  });
 });
 
 // ─── API Routes ──────────────────────────────────
@@ -130,17 +141,27 @@ async function start() {
   }
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('🔄 Shutting down gracefully...');
-  await prisma.$disconnect();
-  server.close(() => process.exit(0));
+// Global Exception Safety Net
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ Unhandled Rejection at Promise:', reason);
 });
 
-process.on('SIGINT', async () => {
-  await prisma.$disconnect();
-  process.exit(0);
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught Exception:', error);
 });
+
+// Graceful shutdown
+async function shutdown() {
+  console.log('🔄 Shutting down gracefully...');
+  try {
+    await pool.end();
+    await prisma.$disconnect();
+  } catch (_) {}
+  server.close(() => process.exit(0));
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
 start();
 

@@ -52,7 +52,7 @@ router.put('/:id', async (req, res) => {
 
     // Only allow updating certain safe fields
     const allowedFields = [
-      'displayName', 'phone', 'email', 'permissions', 'role', 'isActive',
+      'displayName', 'name', 'phone', 'email', 'storeId', 'permissions', 'role', 'isActive',
       'activeSessionId', 'activeDeviceId', 'activeDeviceLabel', 'activeSessionUpdatedAt',
       'fcmTokens',
     ];
@@ -60,7 +60,9 @@ router.put('/:id', async (req, res) => {
     const updateData = {};
     for (const field of allowedFields) {
       if (data[field] !== undefined) {
-        updateData[field] = data[field];
+        if (field === 'name') updateData.displayName = data[field];
+        else if (field === 'storeId') updateData.storeId = data[field]?.toString();
+        else updateData[field] = data[field];
       }
     }
 
