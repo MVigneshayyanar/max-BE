@@ -183,21 +183,15 @@ router.put('/:id', async (req, res) => {
     const body = req.body;
     const firebaseUid = req.firebaseUid;
 
-    // Check if user already owns a store in PostgreSQL
-    let userStore = null;
-    if (req.user?.storeId) {
-      userStore = await prisma.store.findUnique({ where: { id: req.user.storeId } });
-    }
-    if (!userStore && firebaseUid) {
-      userStore = await prisma.store.findFirst({
-        where: {
-          OR: [
-            { ownerUid: firebaseUid },
-            ...(req.user?.email ? [{ ownerEmail: req.user.email }] : []),
-          ],
-        },
-      });
-    }
+    // Check if user already OWNS a store in PostgreSQL
+    let userStore = await prisma.store.findFirst({
+      where: {
+        OR: [
+          { ownerUid: firebaseUid },
+          ...(req.user?.email ? [{ ownerEmail: req.user.email }] : []),
+        ],
+      },
+    });
 
     const storeName = body.businessName || body.storeName || 'My Store';
     const ownerEmail = body.ownerEmail || req.user?.email || null;
