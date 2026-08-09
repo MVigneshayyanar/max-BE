@@ -62,6 +62,11 @@ router.put('/:id', async (req, res) => {
       if (data[field] !== undefined) {
         if (field === 'name') updateData.displayName = data[field];
         else if (field === 'storeId') updateData.storeId = data[field]?.toString();
+        else if (field === 'activeSessionUpdatedAt' && data[field]) {
+          const dateStr = String(data[field]);
+          const isoStr = (dateStr.endsWith('Z') || dateStr.includes('+')) ? dateStr : `${dateStr}Z`;
+          updateData.activeSessionUpdatedAt = new Date(isoStr);
+        }
         else updateData[field] = data[field];
       }
     }
